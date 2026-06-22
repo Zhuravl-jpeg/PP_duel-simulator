@@ -126,18 +126,19 @@ export const botRouter = router({
         input.botIds.map(async (botId) => {
           const bot = activeBots.get(botId);
           if (!bot) {
-            return { botId, error: "Бот не найден" };
+            return { botId, error: "Бот не найден" } as const;
           }
 
           const blindDuration = input.blindDurations?.[botId] || 0;
           const reaction = await bot.react(signalTime, blindDuration);
-          return { botId, ...reaction };
+          return { botId, ...reaction } as const;
         })
       );
 
       // Определяем победителя (минимальное время реакции)
       const validResults = results.filter(
-        (r) => !r.error && !r.isFalseStart && r.reactionTime !== null
+        (r): r is { botId: string; reactionTime: number | null; isFalseStart: boolean; isBlind: boolean; participantId: string } =>
+          !("error" in r) && !r.isFalseStart && r.reactionTime !== null
       );
 
       if (validResults.length > 0) {

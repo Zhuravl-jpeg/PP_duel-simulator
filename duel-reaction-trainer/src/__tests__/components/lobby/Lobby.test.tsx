@@ -59,7 +59,8 @@ describe("Lobby Component", () => {
       />
     );
 
-    expect(screen.getByText(/Создать матч/)).toBeInTheDocument();
+    // Ищем кнопку по тексту и роли
+    expect(screen.getByRole("button", { name: /Создать матч/i })).toBeInTheDocument();
   });
 
   it("должен отображать поле ввода для присоединения", () => {
@@ -99,7 +100,7 @@ describe("Lobby Component", () => {
       />
     );
 
-    fireEvent.click(screen.getByText(/Создать матч/));
+    fireEvent.click(screen.getByRole("button", { name: /Создать матч/i }));
     
     // Проверяем, что функция вызвана
     expect(mockOnCreateMatch).toHaveBeenCalled();
@@ -178,7 +179,7 @@ describe("Lobby Component", () => {
       />
     );
 
-    const button = screen.getByText(/Создать матч/);
+    const button = screen.getByRole("button", { name: /Создать матч/i });
     expect(button).toBeDisabled();
   });
 });
