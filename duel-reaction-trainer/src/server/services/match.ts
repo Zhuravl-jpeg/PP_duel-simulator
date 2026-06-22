@@ -5,8 +5,8 @@ import {
   matchParticipants,
   roundResults,
 } from "../db/schema";
-import { eq, asc, count, and } from "drizzle-orm";
-import type { PgTransaction } from "drizzle-orm/pg-core";
+import { eq, count, and } from "drizzle-orm";
+import { ServerTiming } from "../utils/timing";
 
 /**
  * Интерфейс результата реакции
@@ -15,6 +15,7 @@ export interface ReactionResult {
   participantId: string;
   reactionTime: number | null;
   isFalseStart: boolean;
+  isBlind: boolean; // был ли в слепой зоне
 }
 
 /**
@@ -159,11 +160,15 @@ export class MatchService {
   /**
    * Обработка реакции игрока
    * Сервер фиксирует время нажатия и проверяет фальстарт
+   * Защита от манипуляций:
+   * 1. Время вычисляется на сервере (now - signalTime)
+   * 2. Проверка blind zone (задержка после фальстарта)
+   * 3. Транзакция с блокировкой строки (for update)
    */
   static async submitReaction(roundId: string, participantId: string) {
     // Используем транзакцию для безопасности данных
     const result = await db.transaction(async (tx) => {
-      // 1. Получаем данные раунда
+      // 1. Получаем данные раунда с блокировкой
       const [round] = await tx
         .select()
         .from(rounds)
@@ -174,6 +179,88 @@ export class MatchService {
       if (!round) {
         throw new Error("Раунд не найден");
       }
+
+      if (round.status !== "active") {
+        throw new Error("Раунд не активен");
+      }
+
+      // 2. Получаем данные участника с блокировкой
+      const [participant] = await tx
+        .select()
+        .from(matchParticipants)
+        .where(
+          and(
+            eq(matchParticipants.id, participantId),
+            eq(matchParticipants.matchId, round.matchId)
+          )
+        )
+        .for("update")
+        .limit(1);
+
+      if (!participant) {
+        throw new Error("Участник не найден в этом матче");
+      }
+
+      // 3. Проверяем, не ответил ли уже
+      const existingResult = await tx
+        .select()
+        .from(roundResults)
+        .where(eq(roundResults.participantId, participantId))
+        .limit(1);
+
+      if (existingResult.length > 0) {
+        throw new Error("Участник уже ответил");
+      }
+
+      // 4. Фиксируем время реакции сервером
+      const now = ServerTiming.nowDate();
+      
+      // 5. Проверяем "слепую зону" (blind zone) — задержка после фальстарта
+      const blindDurationMs = ServerTiming.calculateDelay(participant.delaysApplied);
+      const isBlind = ServerTiming.isInBlindZone(round.signalTime!, now, blindDurationMs);
+      
+      // Если в слепой зоне — считаем как фальстарт
+      const isFalseStart = now < round.signalTime! || isBlind;
+
+      let reactionTime: number | null = null;
+      if (!isFalseStart) {
+        reactionTime = now.getTime() - round.signalTime!.getTime();
+      }
+
+      // 6. Сохраняем результат раунда
+      await tx.insert(roundResults).values({
+        roundId,
+        participantId,
+        reactionTime,
+        isFalseStart,
+        finishedAt: now,
+      });
+
+      // 7. Если фальстарт — штраф и увеличиваем задержку
+      if (isFalseStart) {
+        const newFalseStarts = participant.falseStarts + 1;
+        const newDelays = participant.delaysApplied + 1;
+
+        await tx
+          .update(matchParticipants)
+          .set({
+            score: participant.score - 1, // штраф 1 балл
+            falseStarts: newFalseStarts,
+            delaysApplied: newDelays,
+          })
+          .where(eq(matchParticipants.id, participantId));
+      }
+
+      return {
+        reactionTime,
+        isFalseStart,
+        isBlind,
+        blindDurationMs,
+      };
+    });
+
+    return result;
+  }
 
       if (round.status !== "active") {
         throw new Error("Раунд не активен");
