@@ -1,0 +1,51 @@
+{
+  "name": "duel-reaction-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@trpc/server": "^11.0.0-rc.600",
+    "@trpc/client": "^11.0.0-rc.600",
+    "@trpc/react-query": "^11.0.0-rc.600",
+    "@trpc/next": "^11.0.0-rc.600",
+    "better-auth": "^1.1.0",
+    "drizzle-orm": "^0.38.0",
+    "pg": "^8.13.0",
+    "zod": "^3.24.0",
+    "date-fns": "^4.0.0",
+    "superjson": "^2.2.2",
+    "@tanstack/react-query": "^5.62.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/express": "^4.17.0",
+    "typescript": "^5.7.0",
+    "drizzle-kit": "^0.30.0",
+    "tailwindcss": "^3.4.0",
+    "jest": "^29.7.0",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "ts-jest": "^29.2.0"
+  }
+}
