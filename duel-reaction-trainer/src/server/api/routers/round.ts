@@ -1,33 +1,29 @@
 import { z } from "zod";
-import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { router, publicProcedure } from "../trpc";
+import { MatchService } from "../../services/match";
+import { eq } from "drizzle-orm";
+import { rounds, matches } from "../../db/schema";
 import { db } from "../../db";
-import { matches, rounds, matchParticipants, roundResults, users } from "../../db/schema";
-import { eq, asc, desc, count } from "drizzle-orm";
 
 /**
  * Роутер для работы с дуэльными раундами
  */
 export const roundRouter = router({
-  // ========================================
-  // ЗАГЛУШКИ — реализация будет на Фазах 2-4
-  // ========================================
-
   /**
-   * Получить информацию о доступных матчах
+   * Получить список доступных матчей
    */
   listMatches: publicProcedure.query(async () => {
     const matchList = await db
       .select()
       .from(matches)
-      .orderBy(desc(matches.createdAt))
+      .orderBy(matches.createdAt)
       .limit(20);
 
     return matchList;
   }),
 
   /**
-   * Создать новый матч (серию раундов)
-   * TODO: добавить проверку аутентификации
+   * Создать новый матч
    */
   createMatch: publicProcedure
     .input(
@@ -37,18 +33,11 @@ export const roundRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // TODO: Полная реализация на Фазах 2-4
-      console.log("[ROUND] createMatch:", input);
-
-      const newMatch = await db
-        .insert(matches)
-        .values({
-          totalRounds: input.totalRounds,
-          status: "waiting",
-        })
-        .returning();
-
-      return newMatch[0];
+      const match = await MatchService.createMatch(
+        input.participantIds,
+        input.totalRounds
+      );
+      return match;
     }),
 
   /**
@@ -62,10 +51,11 @@ export const roundRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // TODO: Полная реализация на Фазах 2-4
-      console.log("[ROUND] joinMatch:", input);
-
-      return { success: true };
+      const match = await MatchService.joinMatch(
+        input.matchId,
+        input.userId
+      );
+      return match;
     }),
 
   /**
@@ -78,15 +68,12 @@ export const roundRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // TODO: Полная реализация на Фазах 2-4
-      console.log("[ROUND] startRound:", input);
-
-      return { signalSent: true };
+      const result = await MatchService.startRound(input.roundId);
+      return result;
     }),
 
   /**
    * Отправить результат реакции
-   * Сервер фиксирует время и проверяет фальстарт
    */
   submitReaction: publicProcedure
     .input(
@@ -96,11 +83,21 @@ export const roundRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      // TODO: Полная реализация на Фазах 2-4
-      // TODO: Защита от подделки времени — сервер сам фиксирует Date.now()
-      console.log("[ROUND] submitReaction:", input);
+      const result = await MatchService.submitReaction(
+        input.roundId,
+        input.participantId
+      );
+      
+      // Проверяем, завершен ли раунд после этой реакции
+      const completion = await MatchService.checkRoundCompletion(
+        input.roundId
+      );
 
-      return { reactionTime: 0, isFalseStart: false };
+      return {
+        ...result,
+        roundFinished: !!completion,
+        roundCompletion: completion,
+      };
     }),
 
   /**
@@ -113,10 +110,21 @@ export const roundRouter = router({
       })
     )
     .query(async ({ input }) => {
-      // TODO: Полная реализация на Фазах 2-4
-      console.log("[ROUND] getRoundResult:", input);
+      const round = await db
+        .select()
+        .from(rounds)
+        .where(eq(rounds.id, input.roundId))
+        .limit(1);
 
-      return { results: [] };
+      if (!round[0]) return null;
+
+      const { roundResults } = await import("../../db/schema");
+      const results = await db
+        .select()
+        .from(roundResults)
+        .where(eq(roundResults.roundId, input.roundId));
+
+      return { round: round[0], results };
     }),
 
   /**
@@ -131,9 +139,11 @@ export const roundRouter = router({
       })
     )
     .query(async ({ input }) => {
-      // TODO: Полная реализация на Фазах 2-4
-      console.log("[ROUND] getMatchHistory:", input);
-
-      return { matches: [], total: 0 };
+      const matches = await MatchService.getMatchHistory(
+        input.userId,
+        input.limit,
+        input.offset
+      );
+      return { matches, total: matches.length };
     }),
 });
