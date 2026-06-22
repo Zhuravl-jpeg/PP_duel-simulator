@@ -210,7 +210,7 @@ npm run dev
 
 Деплой — **сквозной процесс**, а не отдельная фаза в конце:
 
-1. **После Фазы 1** — проверить сборку (`npm run build`), настроить `.env`
+1. **После Фазы 1** — ✅ проверить сборку (`npm run build`), настроить `.env`
 2. **После Фазы 3** — переделать rate limiting на Redis (вместо `Map` в памяти)
 3. **После Фазы 6** — настроить CI/CD (GitHub Actions → авто-деплой)
 4. **После Фазы 8** — финальный деплой с доменом, HTTPS, мониторингом
@@ -231,6 +231,31 @@ npm run dev
 - **Redis** для rate limiting (вместо `Map` в памяти, который не работает на serverless)
 - **Connection pooling** для PostgreSQL (PgBouncer или Neon's built-in pooling)
 - **Environment variables** в настройках хостинга, не в коде
+
+## ✅ Проверка сборки (Фаза 1)
+
+Сборка проекта прошла успешно:
+
+```
+✓ Compiled successfully in 2.2s
+Generating static pages (4/4)
+```
+
+**Маршруты:**
+| Маршрут | Тип | Размер |
+|---------|-----|--------|
+| `/` | Static | 131 B |
+| `/api/auth/[...better_auth]` | Dynamic | 131 B |
+| `/api/trpc/[...trpc]` | Dynamic | 131 B |
+
+**Исправленные ошибки при сборке:**
+- Обновлена версия `drizzle-kit` до `^0.31.0` (совместимость с better-auth)
+- Исправлены пути импорта в `src/app/api/trpc/[...trpc]/route.ts`
+- Исправлен синтаксис в `src/server/services/match.ts` (удалён дублирующийся код)
+- Исправлены типы Better-auth (удалён невалидный `session.cookie`)
+- Исправлены типы tRPC (добавлен `transformer: superjson`)
+- Добавлен `sql` для SQL-выражений в Drizzle ORM
+- Добавлен `asc` в импорты drizzle-orm
 
 ## 📄 Лицензия
 

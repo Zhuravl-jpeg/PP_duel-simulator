@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { type inferAsyncReturnType } from "@trpc/server";
 import type * as express from "express";
 import { reactionProtectionMiddleware } from "./middleware/protection";
+import superjson from "superjson";
 
 /**
  * Инференс типа контекста tRPC
@@ -21,9 +22,12 @@ export const createTRPCContext = (opts: CreateExpressContextOptions) => {
 };
 
 /**
- * Инстанс tRPC
+ * Инстанс tRPC с transformer
  */
-const t = initTRPC.context<typeof createTRPCContext>().create();
+const t = initTRPC.context<typeof createTRPCContext>()
+  .create({
+    transformer: superjson,
+  });
 
 /**
  * Middleware для логирования запросов

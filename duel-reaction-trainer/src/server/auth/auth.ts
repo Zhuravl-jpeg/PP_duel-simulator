@@ -13,16 +13,6 @@ export const auth = betterAuth({
     enabled: true,
   },
 
-  // Настройка сессий (cookie-based)
-  session: {
-    cookie: {
-      attributes: {
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-      },
-    },
-  },
-
   // URL для редиректа
   baseURL: process.env.BETTER_AUTH_URL,
 

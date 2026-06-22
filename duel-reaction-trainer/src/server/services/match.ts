@@ -5,7 +5,7 @@ import {
   matchParticipants,
   roundResults,
 } from "../db/schema";
-import { eq, count, and } from "drizzle-orm";
+import { eq, count, and, sql, asc } from "drizzle-orm";
 import { ServerTiming } from "../utils/timing";
 
 /**
@@ -54,7 +54,7 @@ export class MatchService {
     const roundsData = Array.from({ length: totalRounds }, (_, i) => ({
       matchId: newMatch.id,
       roundNumber: i + 1,
-      status: "waiting",
+      status: "waiting" as const,
     }));
 
     await db.insert(rounds).values(roundsData);
@@ -262,75 +262,6 @@ export class MatchService {
     return result;
   }
 
-      if (round.status !== "active") {
-        throw new Error("Раунд не активен");
-      }
-
-      // 2. Получаем данные участника
-      const [participant] = await tx
-        .select()
-        .from(matchParticipants)
-        .where(
-          and(
-            eq(matchParticipants.id, participantId),
-            eq(matchParticipants.matchId, round.matchId)
-          )
-        )
-        .limit(1);
-
-      if (!participant) {
-        throw new Error("Участник не найден в этом матче");
-      }
-
-      // 3. Проверяем, не ответил ли уже
-      const existingResult = await tx
-        .select()
-        .from(roundResults)
-        .where(eq(roundResults.participantId, participantId))
-        .limit(1);
-
-      if (existingResult.length > 0) {
-        throw new Error("Участник уже ответил");
-      }
-
-      // 4. Фиксируем время реакции сервером
-      const now = new Date();
-      const isFalseStart = now < round.signalTime!;
-
-      let reactionTime: number | null = null;
-      if (!isFalseStart) {
-        reactionTime = now.getTime() - round.signalTime!.getTime();
-      }
-
-      // 5. Сохраняем результат раунда
-      await tx.insert(roundResults).values({
-        roundId,
-        participantId,
-        reactionTime,
-        isFalseStart,
-        finishedAt: now,
-      });
-
-      // 6. Если фальстарт — штраф
-      if (isFalseStart) {
-        await tx
-          .update(matchParticipants)
-          .set({
-            score: participant.score - 1, // штраф 1 балл
-            falseStarts: participant.falseStarts + 1,
-          })
-          .where(eq(matchParticipants.id, participantId));
-      }
-
-      return {
-        reactionTime,
-        isFalseStart,
-      };
-    });
-
-    return result;
-  }
-
   /**
    * Проверяет, закончились ли все игроки в раунде
    * Если да — завершает раунд и определяет победителя
@@ -391,7 +322,7 @@ export class MatchService {
         await tx
           .update(matchParticipants)
           .set({
-            score: matchParticipants.score + 1,
+            score: sql`${matchParticipants.score} + 1`,
           })
           .where(eq(matchParticipants.id, winnerId));
       }
