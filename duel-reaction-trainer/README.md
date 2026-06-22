@@ -90,10 +90,12 @@ rounds (1) ──── (N) round_results
 ### Требования
 
 - **Node.js** 18+
-- **PostgreSQL** 14+
+- **PostgreSQL** 14+ (локально или Docker)
 - **npm** / **yarn** / **pnpm**
 
-### Установка
+> **Offline-режим**: Проект можно запустить локально без интернета. Все npm-пакеты устанавливаются заранее, PostgreSQL разворачивается локально (или через Docker).
+
+### Установка (онлайн)
 
 ```bash
 # 1. Клонируйте репозиторий
@@ -113,6 +115,33 @@ npm run db:push      # Создать таблицы в БД
 npm run db:migrate   # Применить миграции
 
 # 5. Запустите сервер разработки
+npm run dev
+```
+
+### Установка (offline / localhost)
+
+```bash
+# 1. Установите зависимости (должны быть загружены заранее)
+npm ci
+
+# 2. Настройте .env.local
+cat > .env.local << EOF
+DATABASE_URL="postgresql://postgres:password@localhost:5432/duel_reaction"
+BETTER_AUTH_SECRET="local-secret-key"
+BETTER_AUTH_URL="http://localhost:3000"
+NODE_ENV="development"
+EOF
+
+# 3. Запустите PostgreSQL локально (пример с Docker)
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:15
+
+# 4. Создайте базу данных
+docker exec -it <container_id> psql -U postgres -c "CREATE DATABASE duel_reaction;"
+
+# 5. Накатите схему
+npm run db:push
+
+# 6. Запустите dev-сервер
 npm run dev
 ```
 
@@ -175,6 +204,33 @@ npm run dev
 | 6 | Тестирование: юнит- и интеграционные тесты | ⏳ В процессе |
 | 7 | Боты: эмуляция игроков с настраиваемой реакцией | ⏳ В процессе |
 | 8 | Таблица лидеров: глобальный рейтинг | ⏳ В процессе |
+| 9 | Деплой и CI/CD: настройка сервера, мониторинг | ⏳ В процессе |
+
+### 🚀 Стратегия деплоя
+
+Деплой — **сквозной процесс**, а не отдельная фаза в конце:
+
+1. **После Фазы 1** — проверить сборку (`npm run build`), настроить `.env`
+2. **После Фазы 3** — переделать rate limiting на Redis (вместо `Map` в памяти)
+3. **После Фазы 6** — настроить CI/CD (GitHub Actions → авто-деплой)
+4. **После Фазы 8** — финальный деплой с доменом, HTTPS, мониторингом
+
+### Рекомендуемый стек для продакшена
+
+| Компонент | Решение |
+|-----------|---------|
+| Фронтенд + Бэкенд | **Vercel** (Serverless) или **Railway** (Node.js) |
+| База данных | **Neon** (Serverless PostgreSQL) или **Railway PostgreSQL** |
+| Кэш / Rate limiting | **Upstash Redis** или **Railway Redis** |
+| Домен + HTTPS | Автоматически через Vercel/Railway |
+| Мониторинг | **Sentry** (ошибки) + **UptimeRobot** (аптайм) |
+
+### Требования к продакшену
+
+- **HTTPS** обязателен (Better-auth cookie-сессии не работают без HTTPS)
+- **Redis** для rate limiting (вместо `Map` в памяти, который не работает на serverless)
+- **Connection pooling** для PostgreSQL (PgBouncer или Neon's built-in pooling)
+- **Environment variables** в настройках хостинга, не в коде
 
 ## 📄 Лицензия
 

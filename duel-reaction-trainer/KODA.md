@@ -54,6 +54,8 @@ duel-reaction-trainer/
 ## 🚀 Сборка и запуск
 **Требования:** Node.js 18+, PostgreSQL 14+, npm/yarn/pnpm
 
+> **Offline-режим**: Проект полностью работает без интернета. Все зависимости устанавливаются заранее, PostgreSQL запускается локально (или через Docker).
+
 **Базовые команды:**
 ```bash
 # Установка зависимостей
@@ -79,6 +81,41 @@ npm run test:watch    # Watch-режим
 npm run lint          # ESLint проверка
 ```
 
+### Локальный запуск (offline / localhost)
+
+```bash
+# 1. Настройте .env.local
+cat > .env.local << EOF
+DATABASE_URL="postgresql://postgres:password@localhost:5432/duel_reaction"
+BETTER_AUTH_SECRET="local-secret-key"
+BETTER_AUTH_URL="http://localhost:3000"
+NODE_ENV="development"
+EOF
+
+# 2. Запустите PostgreSQL локально (пример с Docker)
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:15
+
+# 3. Создайте базу данных
+docker exec -it <container_id> psql -U postgres -c "CREATE DATABASE duel_reaction;"
+
+# 4. Накатите схему
+npm run db:push
+
+# 5. Запустите dev-сервер
+npm run dev
+```
+
+### Ключевые отличия: Локально vs Продакшен
+
+| Параметр | Локально (offline) | Продакшен |
+|----------|-------------------|-----------|
+| **PostgreSQL** | Локальный / Docker | Neon (Serverless) |
+| **Redis** | Не нужен (Map в памяти) | Upstash Redis |
+| **HTTPS** | Не нужен (HTTP) | Обязательно |
+| **BETTER_AUTH_URL** | `http://localhost:3000` | `https://yourdomain.com` |
+| **Rate Limiting** | `Map` (в памяти) | Redis (распределённый) |
+| **Хостинг** | `npm run dev` | Vercel / Railway |
+
 ## 📐 Правила разработки
 1. **TypeScript Strict Mode**: Все файлы должны компилироваться без `any`. Используются пути `@/*` для алиасов импорта.
 2. **Type-Safe API**: Все данные, передаваемые между клиентом и сервером, валидируются через **Zod** на стороне сервера и инференсируются на клиенте через tRPC.
@@ -97,6 +134,58 @@ npm run lint          # ESLint проверка
 | 1 | Инфраструктура: Next.js, Drizzle, Better-auth, tRPC, структура, README | ✅ Завершено |
 | 2 | Серверная логика ядра: модели, механизмы генерации сигнала, логика фальстарта | ✅ Завершено |
 | 3 | Защита от манипуляций: синхронизация, серверное время, race-conditions | ✅ Завершено |
+| 4 | tRPC-маршруты: создание раундов, отправка результатов | ⏳ Ожидает |
+| 5 | Клиентский UI: лобби, раунд, результаты, история | ⏳ Ожидает |
+| 6 | Тестирование: юнит- и интеграционные тесты ядра | ⏳ Ожидает |
+| 7 | Боты-эмуляторы с настраиваемой реакцией | ⏳ Ожидает |
+| 8 | Глобальная таблица лидеров | ⏳ Ожидает |
+| 9 | Деплой и CI/CD: сервер, мониторинг, HTTPS | ⏳ Ожидает |
+
+## 🚀 Стратегия деплоя
+
+Деплой — **сквозной процесс**, а не отдельная фаза в конце:
+
+| Этап | Что делать | Когда |
+|------|-----------|-------|
+| **Проверка сборки** | `npm run build` проходит без ошибок | После Фазы 1 |
+| **Переделка rate limiting** | Заменить `Map` на Redis (для serverless) | После Фазы 3 |
+| **CI/CD настройка** | GitHub Actions → автоматический деплой | После Фазы 6 |
+| **Финальный деплой** | Домен, HTTPS, мониторинг, production БД | После Фазы 8 |
+
+### Рекомендуемый стек для продакшена
+
+| Компонент | Решение |
+|-----------|---------|
+| Фронтенд + Бэкенд | **Vercel** (Serverless) или **Railway** (Node.js) |
+| База данных | **Neon** (Serverless PostgreSQL) |
+| Кэш / Rate limiting | **Upstash Redis** |
+| Домен + HTTPS | Автоматически через Vercel/Railway |
+| Мониторинг | **Sentry** (ошибки) + **UptimeRobot** (аптайм) |
+
+### Требования к продакшену
+
+- **HTTPS** обязателен (Better-auth cookie-сессии не работают без HTTPS)
+- **Redis** для rate limiting (вместо `Map` в памяти, который не работает на serverless)
+- **Connection pooling** для PostgreSQL (PgBouncer или Neon's built-in pooling)
+- **Environment variables** в настройках хостинга, не в коде
+
+### Критические проблемы текущего кода для деплоя
+
+1. **Rate Limiting в памяти** (`src/server/api/middleware/protection.ts`)
+   - `Map` не работает на serverless (каждый запрос = новый процесс)
+   - **Решение**: Переделать на Redis после Фазы 3
+
+2. **Нет WebSocket/SSE для синхронизации**
+   - Сейчас сигнал отправляется через tRPC (HTTP)
+   - Для реального времени нужен SSE или WebSocket (см. Фазы 4-5)
+
+3. **Better-auth требует настройки**
+   - В `.env.production`: `BETTER_AUTH_URL="https://yourdomain.com"`
+   - Обязательно HTTPS!
+
+4. **БД-пул не оптимизирован для serverless**
+   - `pg.Pool` в `src/server/db/index.ts` может создавать слишком много соединений
+   - **Решение**: Использовать Neon's connection string с built-in pooling или PgBouncer
 
 ## 🧠 Реализованная логика (Фаза 2)
 **Файл:** `src/server/services/match.ts`
@@ -134,14 +223,6 @@ npm run lint          # ESLint проверка
 ```
 delay = min(500ms + (falseStarts * 200ms), 3000ms)
 ```
-
----
-| 3 | Защита от манипуляций: синхронизация, серверное время, race-conditions | ⏳ Ожидает |
-| 4 | Полная реализация tRPC-маршрутов и валидация | ⏳ Ожидает |
-| 5 | Клиентский UI: лобби, раунд, результаты, история | ⏳ Ожидает |
-| 6 | Тестирование: юнит- и интеграционные тесты ядра | ⏳ Ожидает |
-| 7 | Боты-эмуляторы с настраиваемой реакцией | ⏳ Ожидает |
-| 8 | Глобальная таблица лидеров | ⏳ Ожидает |
 
 ## 🔐 Безопасность и ограничения
 - `Date.now()` на клиенте **не используется** для расчёта времени реакции.
