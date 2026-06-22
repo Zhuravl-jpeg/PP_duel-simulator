@@ -135,6 +135,7 @@ npm run dev
 | ↳ Проверка сборки `npm run build` | ✅ Успешно |
 | 2 | Серверная логика ядра: модели, механизмы генерации сигнала, логика фальстарта | ✅ Завершено |
 | 3 | Защита от манипуляций: синхронизация, серверное время, race-conditions | ✅ Завершено |
+| ↳ Redis для rate limiting | ✅ Успешно |
 | 4 | tRPC-маршруты: создание раундов, отправка результатов | ⏳ Ожидает |
 | 5 | Клиентский UI: лобби, раунд, результаты, история | ⏳ Ожидает |
 | 6 | Тестирование: юнит- и интеграционные тесты ядра | ⏳ Ожидает |
@@ -149,7 +150,7 @@ npm run dev
 | Этап | Что делать | Когда |
 |------|-----------|-------|
 | **Проверка сборки** | `npm run build` проходит без ошибок | После Фазы 1 ✅ |
-| **Переделка rate limiting** | Заменить `Map` на Redis (для serverless) | После Фазы 3 |
+| **Переделка rate limiting** | Заменить `Map` на Redis (для serverless) | После Фазы 3 ✅ |
 | **CI/CD настройка** | GitHub Actions → автоматический деплой | После Фазы 6 |
 | **Финальный деплой** | Домен, HTTPS, мониторинг, production БД | После Фазы 8 |
 
@@ -212,6 +213,41 @@ Generating static pages (4/4)
 - Исправлены типы tRPC (добавлен `transformer: superjson`)
 - Добавлен `sql` для SQL-выражений в Drizzle ORM
 - Добавлен `asc` в импорты drizzle-orm
+
+## 🛡 После Фазы 3: Redis для rate limiting
+
+### Что было сделано:
+
+**Файл:** `src/server/api/middleware/protection.ts`
+
+**Ключевые изменения:**
+- Удалён `Map` в памяти (не работает на serverless)
+- Добавлен `ioredis` для подключения к Redis
+- Middleware теперь использует Redis для хранения таймеров
+- TTL (Time To Live) = 300 секунд (автоматическая очистка)
+- Fail-open: если Redis недоступен, проверка пропускается (не ломает приложение)
+
+### Как работает:
+
+```typescript
+// Ключ: reaction:{participantId}:{roundId}
+// Значение: timestamp последнего нажатия
+// TTL: 300 секунд
+
+await client.set(timerKey, Date.now().toString(), "EX", 300);
+const lastReaction = await client.get(timerKey);
+```
+
+### Настройка для продакшена:
+
+```env
+# .env.production
+REDIS_URL="redis://default:password@upstash.io:6379"
+```
+
+### Локальная разработка:
+
+Если `REDIS_URL` не установлен — rate limiting отключается (для удобства тестирования).
 
 ## 🧠 Реализованная логика (Фаза 2)
 **Файл:** `src/server/services/match.ts`

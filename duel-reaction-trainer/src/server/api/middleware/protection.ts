@@ -1,18 +1,17 @@
-import { initTRPC, TRPCError } from "@trpc/server";
+import Redis from "ioredis";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 /**
  * tRPC Middleware для защиты от манипуляций
  * 
+ * Использует Redis для rate limiting (работает на serverless)
+ * 
  * Функции:
- * 1. Защита от повторных нажатий (rate limiting)
+ * 1. Защита от повторных нажатий (rate limiting через Redis)
  * 2. Валидация входных данных
  * 3. Логирование подозрительных запросов
  */
-
-// Хранилище для отслеживания последних нажатий (в памяти, для dev)
-// В продакшене использовать Redis или БД
-const reactionTimers = new Map<string, number>();
 
 // Конфигурация защиты
 const PROTECTION_CONFIG = {
@@ -20,7 +19,45 @@ const PROTECTION_CONFIG = {
   MAX_REACTION_TIME_MS: 30000, // Максимальное время реакции (30 сек)
   MAX_PARTICIPANTS: 5,
   MIN_PARTICIPANTS: 2,
+  TTL_SECONDS: 300, // Время жизни ключа в Redis (5 минут)
 };
+
+// Инициализация Redis клиента
+let redisClient: Redis | null = null;
+
+/**
+ * Получение или создание Redis клиента
+ */
+async function getRedisClient(): Promise<Redis | null> {
+  if (redisClient) {
+    return redisClient;
+  }
+
+  const redisUrl = process.env.REDIS_URL;
+  
+  if (!redisUrl) {
+    // Если Redis не настроен — пропускаем проверку (для локальной разработки)
+    console.warn("[PROTECTION] REDIS_URL not set, rate limiting disabled");
+    return null;
+  }
+
+  try {
+    redisClient = new Redis(redisUrl);
+
+    redisClient.on("error", (err) => {
+      console.error("[REDIS] Connection error:", err);
+    });
+
+    // Проверяем подключение
+    await redisClient.ping();
+    console.log("[REDIS] Connected successfully");
+    
+    return redisClient;
+  } catch (error) {
+    console.error("[REDIS] Connection failed:", error);
+    return null;
+  }
+}
 
 /**
  * Middleware для проверки легитимности нажатия
@@ -54,25 +91,40 @@ export const reactionProtectionMiddleware = async ({
     }
 
     const { roundId, participantId } = reactionInput.data;
-    const timerKey = `${participantId}-${roundId}`;
+    const timerKey = `reaction:${participantId}:${roundId}`;
 
-    // Проверяем, не слишком ли быстро отправлен запрос
-    const lastReaction = reactionTimers.get(timerKey);
-    if (lastReaction) {
-      const timeSinceLast = Date.now() - lastReaction;
-      if (timeSinceLast < PROTECTION_CONFIG.MIN_INTERVAL_MS) {
-        console.warn(
-          `[PROTECTION] Rate limit exceeded for ${participantId} in round ${roundId}`
-        );
-        throw new TRPCError({
-          code: "TOO_MANY_REQUESTS",
-          message: "Слишком быстрое нажатие",
-        });
+    try {
+      const client = await getRedisClient();
+      
+      // Если Redis не подключён — пропускаем проверку
+      if (!client) {
+        return next();
       }
-    }
 
-    // Обновляем таймер
-    reactionTimers.set(timerKey, Date.now());
+      // Проверяем, есть ли уже запись о нажатии
+      const lastReaction = await client.get(timerKey);
+      
+      if (lastReaction) {
+        const timeSinceLast = Date.now() - parseInt(lastReaction);
+        if (timeSinceLast < PROTECTION_CONFIG.MIN_INTERVAL_MS) {
+          console.warn(
+            `[PROTECTION] Rate limit exceeded for ${participantId} in round ${roundId}`
+          );
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "Слишком быстрое нажатие",
+          });
+        }
+      }
+
+      // Записываем текущее время с TTL
+      await client.set(timerKey, Date.now().toString(), "EX", PROTECTION_CONFIG.TTL_SECONDS);
+      
+    } catch (error) {
+      // Если Redis недоступен — пропускаем проверку (fail-open)
+      if (error instanceof TRPCError) throw error;
+      console.warn("[PROTECTION] Redis check failed, allowing request:", error);
+    }
   }
 
   // Вызываем следующую процедуру
@@ -88,16 +140,11 @@ export const reactionProtectionMiddleware = async ({
 };
 
 /**
- * Middleware для очистки устаревших таймеров (запускать периодически)
+ * Закрытие Redis подключения (для graceful shutdown)
  */
-export const cleanupReactionTimers = () => {
-  const now = Date.now();
-  for (const [key, timestamp] of reactionTimers.entries()) {
-    if (now - timestamp > 60000) { // 1 минута
-      reactionTimers.delete(key);
-    }
+export async function closeRedisClient() {
+  if (redisClient) {
+    await redisClient.quit();
+    redisClient = null;
   }
-};
-
-// Настройка интервала очистки (каждые 60 секунд)
-setInterval(cleanupReactionTimers, 60000);
+}

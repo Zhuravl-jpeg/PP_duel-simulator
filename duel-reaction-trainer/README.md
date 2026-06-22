@@ -211,7 +211,7 @@ npm run dev
 Деплой — **сквозной процесс**, а не отдельная фаза в конце:
 
 1. **После Фазы 1** — ✅ проверить сборку (`npm run build`), настроить `.env`
-2. **После Фазы 3** — переделать rate limiting на Redis (вместо `Map` в памяти)
+2. **После Фазы 3** — ✅ переделать rate limiting на Redis (вместо `Map` в памяти)
 3. **После Фазы 6** — настроить CI/CD (GitHub Actions → авто-деплой)
 4. **После Фазы 8** — финальный деплой с доменом, HTTPS, мониторингом
 
@@ -254,8 +254,43 @@ Generating static pages (4/4)
 - Исправлен синтаксис в `src/server/services/match.ts` (удалён дублирующийся код)
 - Исправлены типы Better-auth (удалён невалидный `session.cookie`)
 - Исправлены типы tRPC (добавлен `transformer: superjson`)
-- Добавлен `sql` для SQL-выражений в Drizzle ORM
+- Добавлен `sql` для SQL-выражений в Drizzle
 - Добавлен `asc` в импорты drizzle-orm
+
+## 🛡 После Фазы 3: Redis для rate limiting
+
+### Что было сделано:
+
+**Файл:** `src/server/api/middleware/protection.ts`
+
+**Ключевые изменения:**
+- Удалён `Map` в памяти (не работает на serverless)
+- Добавлен `ioredis` для подключения к Redis
+- Middleware теперь использует Redis для хранения таймеров
+- TTL (Time To Live) = 300 секунд (автоматическая очистка)
+- Fail-open: если Redis недоступен, проверка пропускается (не ломает приложение)
+
+### Как работает:
+
+```typescript
+// Ключ: reaction:{participantId}:{roundId}
+// Значение: timestamp последнего нажатия
+// TTL: 300 секунд
+
+await client.set(timerKey, Date.now().toString(), "EX", 300);
+const lastReaction = await client.get(timerKey);
+```
+
+### Настройка для продакшена:
+
+```env
+# .env.production
+REDIS_URL="redis://default:password@upstash.io:6379"
+```
+
+### Локальная разработка:
+
+Если `REDIS_URL` не установлен — rate limiting отключается (для удобства тестирования).
 
 ## 📄 Лицензия
 
