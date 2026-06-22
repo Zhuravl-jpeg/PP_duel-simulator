@@ -27,17 +27,55 @@ export const createTRPCContext = (opts: CreateExpressContextOptions) => {
 const t = initTRPC.context<typeof createTRPCContext>()
   .create({
     transformer: superjson,
+    errorFormatter: ({ shape, error }) => {
+      return {
+        ...shape,
+        data: {
+          ...shape.data,
+          code: error?.code,
+          message: error?.message,
+          cause: error?.cause?.message,
+        },
+      };
+    },
   });
 
 /**
  * Middleware для логирования запросов
  */
-const loggingMiddleware = t.middleware(({ next, path }) => {
+const loggingMiddleware = t.middleware(async ({ next, path }) => {
   const start = Date.now();
-  const result = next();
+  const result = await next();
   const duration = Date.now() - start;
-  console.log(`[tRPC] ${path} completed in ${duration}ms`);
+  
+  if (result.ok) {
+    console.log(`[tRPC] ${path} completed in ${duration}ms`);
+  } else {
+    console.error(`[tRPC] ${path} failed in ${duration}ms:`, result.error);
+  }
+  
   return result;
+});
+
+/**
+ * Middleware для обработки ошибок
+ */
+const errorHandlingMiddleware = t.middleware(async ({ next }) => {
+  try {
+    const result = await next();
+    return result;
+  } catch (err: any) {
+    if (err instanceof TRPCError) {
+      throw err;
+    }
+    
+    // Преобразуем неизвестные ошибки в TRPCError
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: err.message || "Внутренняя ошибка сервера",
+      cause: err,
+    });
+  }
 });
 
 /**
@@ -61,6 +99,7 @@ export const protectedProcedure = t.procedure.use(({ next, ctx }) => {
  * Применяет middleware защиты от манипуляций
  */
 export const publicProcedure = t.procedure
+  .use(errorHandlingMiddleware)
   .use(loggingMiddleware)
   .use(reactionProtectionMiddleware as any);
 

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../trpc";
 import { MatchService } from "../../services/match";
-import { eq } from "drizzle-orm";
-import { rounds, matches } from "../../db/schema";
+import { eq, and, asc } from "drizzle-orm";
+import { rounds, matches, matchParticipants } from "../../db/schema";
 import { db } from "../../db";
 
 /**
@@ -128,6 +128,39 @@ export const roundRouter = router({
     }),
 
   /**
+   * Получить все раунды матча
+   */
+  getMatchRounds: publicProcedure
+    .input(
+      z.object({
+        matchId: z.string(),
+      })
+    )
+    .query(async ({ input }) => {
+      const matchRounds = await db
+        .select()
+        .from(rounds)
+        .where(eq(rounds.matchId, input.matchId))
+        .orderBy(asc(rounds.roundNumber));
+
+      return matchRounds;
+    }),
+
+  /**
+   * Получить детали матча
+   */
+  getMatchDetails: publicProcedure
+    .input(
+      z.object({
+        matchId: z.string(),
+      })
+    )
+    .query(async ({ input }) => {
+      const details = await MatchService.getMatchDetails(input.matchId);
+      return details;
+    }),
+
+  /**
    * Получить историю дуэлей для пользователя
    */
   getMatchHistory: publicProcedure
@@ -145,5 +178,36 @@ export const roundRouter = router({
         input.offset
       );
       return { matches, total: matches.length };
+    }),
+
+  /**
+   * Получить статус матча
+   */
+  getMatchStatus: publicProcedure
+    .input(
+      z.object({
+        matchId: z.string(),
+      })
+    )
+    .query(async ({ input }) => {
+      const match = await db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, input.matchId))
+        .limit(1);
+
+      if (!match[0]) return null;
+
+      const participants = await db
+        .select()
+        .from(matchParticipants)
+        .where(eq(matchParticipants.matchId, input.matchId));
+
+      return {
+        status: match[0].status,
+        currentRound: match[0].currentRound,
+        totalRounds: match[0].totalRounds,
+        participantsCount: participants.length,
+      };
     }),
 });
