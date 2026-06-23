@@ -245,6 +245,9 @@ npm run dev
 | ↳ Интеграция с главной страницей | ✅ Успешно |
 | ↳ Сборка прошла успешно | ✅ Успешно |
 | 9 | Деплой и CI/CD: сервер, мониторинг, HTTPS | ⏳ Ожидает |
+| ↳ Оптимизация БД-пула (Serverless) | ✅ Успешно |
+| ↳ CI/CD (GitHub Actions) | ✅ Успешно |
+| ↳ Генерация BETTER_AUTH_SECRET | ✅ Успешно |
 
 ## 🚀 Стратегия деплоя
 
@@ -278,7 +281,7 @@ npm run dev
 
 1. **Rate Limiting в памяти** (`src/server/api/middleware/protection.ts`)
    - `Map` не работает на serverless (каждый запрос = новый процесс)
-   - **Решение**: Переделать на Redis после Фазы 3
+   - **Решение**: Переделать на Redis после Фазы 3 ✅
 
 2. **Нет WebSocket/SSE для синхронизации**
    - Сейчас сигнал отправляется через tRPC (HTTP)
@@ -286,11 +289,11 @@ npm run dev
 
 3. **Better-auth требует настройки**
    - В `.env.production`: `BETTER_AUTH_URL="https://yourdomain.com"`
-   - Обязательно HTTPS!
+   - Обязательно HTTPS! ✅
 
 4. **БД-пул не оптимизирован для serverless**
    - `pg.Pool` в `src/server/db/index.ts` может создавать слишком много соединений
-   - **Решение**: Использовать Neon's connection string с built-in pooling или PgBouncer
+   - **Решение**: Использовать Neon's connection string с built-in pooling или PgBouncer ✅
 
 ## ✅ Проверка сборки (Фаза 1)
 
