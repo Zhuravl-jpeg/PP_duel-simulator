@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSession, signIn, signOut } from "@/lib/auth-client";
 import { trpc } from "@/lib/trpc";
 import Lobby from "@/components/lobby/Lobby";
 import Game from "@/components/game/Game";
@@ -12,10 +13,44 @@ import Leaderboard from "@/components/leaderboard/Leaderboard";
 type View = "lobby" | "game" | "results" | "history" | "leaderboard";
 
 export default function Home() {
+  const { data: session, isPending } = useSession();
   const [currentView, setCurrentView] = useState<View>("lobby");
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
-  const [currentUserId] = useState(() => `user_${Date.now()}`); // TODO: заменить на реальную авторизацию
   const [activeBotIds, setActiveBotIds] = useState<string[]>([]);
+
+  // Если пользователь не авторизован, показываем экран входа
+  if (isPending) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-blue-950 flex items-center justify-center">
+        <div className="text-white text-xl">Загрузка...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-blue-950 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <h1 className="text-3xl font-bold text-white">Добро пожаловать в Duel Reaction</h1>
+          <p className="text-gray-400">Пожалуйста, войдите, чтобы начать игру</p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => signIn.social({ provider: "github", callbackURL: "/" })}
+              className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Войти через GitHub
+            </button>
+            <button
+              onClick={() => signIn.social({ provider: "google", callbackURL: "/" })}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Войти через Google
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const createMatch = trpc.round.createMatch.useMutation();
   const joinMatch = trpc.round.joinMatch.useMutation();
@@ -27,7 +62,7 @@ export default function Home() {
   const handleCreateMatch = async () => {
     // Создаём матч с ботами для демо
     const participantIds = [
-      currentUserId,
+      session.user.id,
       `bot_1`,
       `bot_2`,
     ];
@@ -98,6 +133,17 @@ export default function Home() {
             >
               История
             </button>
+            
+            {/* User Profile */}
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l border-gray-700">
+              <span className="text-sm text-gray-300">{session.user.name || session.user.email}</span>
+              <button
+                onClick={() => signOut()}
+                className="px-3 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
+              >
+                Выйти
+              </button>
+            </div>
           </nav>
         </div>
       </header>
@@ -120,7 +166,7 @@ export default function Home() {
         {currentView === "game" && activeMatchId && (
           <Game
             matchId={activeMatchId}
-            userId={currentUserId}
+            userId={session.user.id}
             onMatchFinished={handleMatchFinished}
           />
         )}
@@ -130,11 +176,11 @@ export default function Home() {
         )}
 
         {currentView === "history" && (
-          <History userId={currentUserId} />
+          <History userId={session.user.id} />
         )}
 
         {currentView === "leaderboard" && (
-          <Leaderboard userId={currentUserId} />
+          <Leaderboard userId={session.user.id} />
         )}
       </main>
     </div>
