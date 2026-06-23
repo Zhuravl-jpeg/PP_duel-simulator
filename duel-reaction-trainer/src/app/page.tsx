@@ -7,8 +7,9 @@ import Game from "@/components/game/Game";
 import Results from "@/components/results/Results";
 import History from "@/components/history/History";
 import BotManager from "@/components/bots/BotManager";
+import Leaderboard from "@/components/leaderboard/Leaderboard";
 
-type View = "lobby" | "game" | "results" | "history";
+type View = "lobby" | "game" | "results" | "history" | "leaderboard";
 
 export default function Home() {
   const [currentView, setCurrentView] = useState<View>("lobby");
@@ -78,6 +79,16 @@ export default function Home() {
               Лобби
             </button>
             <button
+              onClick={() => setCurrentView("leaderboard")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                currentView === "leaderboard"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+              }`}
+            >
+              🏆 Лидеры
+            </button>
+            <button
               onClick={() => setCurrentView("history")}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 currentView === "history"
@@ -120,6 +131,10 @@ export default function Home() {
 
         {currentView === "history" && (
           <History userId={currentUserId} />
+        )}
+
+        {currentView === "leaderboard" && (
+          <Leaderboard userId={currentUserId} />
         )}
       </main>
     </div>
