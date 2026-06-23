@@ -6,6 +6,7 @@ import Lobby from "@/components/lobby/Lobby";
 import Game from "@/components/game/Game";
 import Results from "@/components/results/Results";
 import History from "@/components/history/History";
+import BotManager from "@/components/bots/BotManager";
 
 type View = "lobby" | "game" | "results" | "history";
 
@@ -13,6 +14,7 @@ export default function Home() {
   const [currentView, setCurrentView] = useState<View>("lobby");
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
   const [currentUserId] = useState(() => `user_${Date.now()}`); // TODO: заменить на реальную авторизацию
+  const [activeBotIds, setActiveBotIds] = useState<string[]>([]);
 
   const createMatch = trpc.round.createMatch.useMutation();
   const joinMatch = trpc.round.joinMatch.useMutation();
@@ -42,6 +44,11 @@ export default function Home() {
 
   const handleMatchFinished = () => {
     setCurrentView("results");
+  };
+
+  const handleBotCreated = (botId: string, name: string) => {
+    setActiveBotIds((prev) => [...prev, botId]);
+    console.log(`🤖 Бот "${name}" создан с ID: ${botId}`);
   };
 
   return (
@@ -85,7 +92,12 @@ export default function Home() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+        {/* Bot Manager Section */}
+        <div className="max-w-4xl mx-auto">
+          <BotManager onBotCreated={handleBotCreated} />
+        </div>
+
         {currentView === "lobby" && (
           <Lobby
             onCreateMatch={handleCreateMatch}

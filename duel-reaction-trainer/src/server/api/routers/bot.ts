@@ -1,11 +1,21 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../trpc";
-import { BotEmulator, BotFactory, type BotConfig } from "../../services/bot-emulator";
+import { BotEmulator, BotFactory, type BotConfig, type BotEvent } from "../../services/bot-emulator";
+import { v4 as uuidv4 } from "uuid";
+
+/**
+ * Интерфейс для хранения бота с дополнительными метаданными
+ */
+interface BotEntry {
+  bot: BotEmulator;
+  id: string;
+  createdAt: Date;
+}
 
 /**
  * Хранилище активных ботов в памяти
  */
-const activeBots = new Map<string, BotEmulator>();
+const activeBots = new Map<string, BotEntry>();
 
 /**
  * Роутер для работы с ботами-эмуляторами
@@ -58,8 +68,13 @@ export const botRouter = router({
           break;
       }
 
-      const botId = bot.getConfig().name;
-      activeBots.set(botId, bot);
+      const botId = uuidv4();
+      const entry: BotEntry = {
+        bot,
+        id: botId,
+        createdAt: new Date(),
+      };
+      activeBots.set(botId, entry);
 
       return {
         botId,
@@ -77,9 +92,9 @@ export const botRouter = router({
       })
     )
     .mutation(({ input }) => {
-      const bot = activeBots.get(input.botId);
-      if (bot) {
-        bot.destroy();
+      const entry = activeBots.get(input.botId);
+      if (entry) {
+        entry.bot.destroy();
         activeBots.delete(input.botId);
         return { success: true };
       }
@@ -98,13 +113,13 @@ export const botRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const bot = activeBots.get(input.botId);
-      if (!bot) {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
         throw new Error("Бот не найден");
       }
 
       const signalTime = new Date(input.signalTime);
-      const reaction = await bot.react(signalTime, input.blindDuration);
+      const reaction = await entry.bot.react(signalTime, input.blindDuration);
 
       return reaction;
     }),
@@ -124,13 +139,13 @@ export const botRouter = router({
       const signalTime = new Date(input.signalTime);
       const results = await Promise.all(
         input.botIds.map(async (botId) => {
-          const bot = activeBots.get(botId);
-          if (!bot) {
+          const entry = activeBots.get(botId);
+          if (!entry) {
             return { botId, error: "Бот не найден" } as const;
           }
 
           const blindDuration = input.blindDurations?.[botId] || 0;
-          const reaction = await bot.react(signalTime, blindDuration);
+          const reaction = await entry.bot.react(signalTime, blindDuration);
           return { botId, ...reaction } as const;
         })
       );
@@ -161,7 +176,12 @@ export const botRouter = router({
    * Получить список активных ботов
    */
   listBots: publicProcedure.query(() => {
-    const bots = Array.from(activeBots.values()).map((bot) => bot.getConfig());
+    const bots = Array.from(activeBots.values()).map((entry) => ({
+      id: entry.id,
+      config: entry.bot.getConfig(),
+      state: entry.bot.getState(),
+      eventCount: entry.bot.getEventLog().length,
+    }));
     return {
       count: bots.length,
       bots,
@@ -183,15 +203,15 @@ export const botRouter = router({
       })
     )
     .mutation(({ input }) => {
-      const bot = activeBots.get(input.botId);
-      if (!bot) {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
         throw new Error("Бот не найден");
       }
 
-      bot.updateConfig(input.updates);
+      entry.bot.updateConfig(input.updates);
       return {
         success: true,
-        config: bot.getConfig(),
+        config: entry.bot.getConfig(),
       };
     }),
 
@@ -199,8 +219,110 @@ export const botRouter = router({
    * Очистить всех ботов
    */
   clearAll: publicProcedure.mutation(() => {
-    activeBots.forEach((bot) => bot.destroy());
+    activeBots.forEach((entry) => entry.bot.destroy());
     activeBots.clear();
     return { success: true, count: 0 };
   }),
+
+  /**
+   * Получить лог событий бота
+   */
+  getBotEvents: publicProcedure
+    .input(
+      z.object({
+        botId: z.string(),
+        limit: z.number().min(1).max(100).default(50),
+      })
+    )
+    .query(({ input }) => {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
+        throw new Error("Бот не найден");
+      }
+
+      const events = entry.bot.getEventLog().slice(-input.limit);
+      return { events, total: events.length };
+    }),
+
+  /**
+   * Получить состояние бота
+   */
+  getBotState: publicProcedure
+    .input(
+      z.object({
+        botId: z.string(),
+      })
+    )
+    .query(({ input }) => {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
+        throw new Error("Бот не найден");
+      }
+
+      return {
+        state: entry.bot.getState(),
+        config: entry.bot.getConfig(),
+      };
+    }),
+
+  /**
+   * Начать участие бота в матче
+   */
+  startBotInMatch: publicProcedure
+    .input(
+      z.object({
+        botId: z.string(),
+        matchId: z.string(),
+        roundId: z.string(),
+        participantId: z.string(),
+      })
+    )
+    .mutation(({ input }) => {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
+        throw new Error("Бот не найден");
+      }
+
+      entry.bot.startPlaying(input.matchId, input.roundId, input.participantId);
+      return { success: true };
+    }),
+
+  /**
+   * Завершить раунд для бота
+   */
+  finishBotRound: publicProcedure
+    .input(
+      z.object({
+        botId: z.string(),
+        wasFalseStart: z.boolean(),
+      })
+    )
+    .mutation(({ input }) => {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
+        throw new Error("Бот не найден");
+      }
+
+      entry.bot.finishRound(input.wasFalseStart);
+      return { success: true, state: entry.bot.getState() };
+    }),
+
+  /**
+   * Завершить матч для бота
+   */
+  finishBotMatch: publicProcedure
+    .input(
+      z.object({
+        botId: z.string(),
+      })
+    )
+    .mutation(({ input }) => {
+      const entry = activeBots.get(input.botId);
+      if (!entry) {
+        throw new Error("Бот не найден");
+      }
+
+      entry.bot.finishMatch();
+      return { success: true, state: entry.bot.getState() };
+    }),
 });
