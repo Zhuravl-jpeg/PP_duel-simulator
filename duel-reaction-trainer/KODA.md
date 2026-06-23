@@ -248,6 +248,7 @@ npm run dev
 | ↳ Оптимизация БД-пула (Serverless) | ✅ Успешно |
 | ↳ CI/CD (GitHub Actions) | ✅ Успешно |
 | ↳ Генерация BETTER_AUTH_SECRET | ✅ Успешно |
+| ↳ Настройка OAuth (Google, GitHub) | ✅ Успешно |
 
 ## 🚀 Стратегия деплоя
 

@@ -18,4 +18,16 @@ export const auth = betterAuth({
 
   // Секрет
   secret: process.env.BETTER_AUTH_SECRET,
+
+  // OAuth провайдеры
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_ID || "",
+      clientSecret: process.env.GOOGLE_SECRET || "",
+    },
+    github: {
+      clientId: process.env.GITHUB_ID || "",
+      clientSecret: process.env.GITHUB_SECRET || "",
+    },
+  },
 });
