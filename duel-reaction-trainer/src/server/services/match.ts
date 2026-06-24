@@ -7,6 +7,7 @@ import {
 } from "../db/schema";
 import { eq, count, and, sql, asc } from "drizzle-orm";
 import { ServerTiming } from "../utils/timing";
+import { emitMatchEvent } from "../utils/event-stream";
 
 /**
  * Интерфейс результата реакции
@@ -151,6 +152,14 @@ export class MatchService {
       .set({ status: "active" })
       .where(eq(matches.id, round.matchId));
 
+    // Эмитим событие для SSE-клиентов
+    emitMatchEvent({
+      matchId: round.matchId,
+      type: "ROUND_STARTED",
+      payload: { roundId, signalTime },
+      timestamp: ServerTiming.now(),
+    });
+
     return {
       ...round,
       signalTime,
@@ -166,6 +175,15 @@ export class MatchService {
    * 3. Транзакция с блокировкой строки (for update)
    */
   static async submitReaction(roundId: string, participantId: string) {
+    // Получаем matchId заранее для SSE-эмитов
+    const [roundData] = await db
+      .select()
+      .from(rounds)
+      .where(eq(rounds.id, roundId))
+      .limit(1);
+
+    if (!roundData) throw new Error("Раунд не найден");
+
     // Используем транзакцию для безопасности данных
     const result = await db.transaction(async (tx) => {
       // 1. Получаем данные раунда с блокировкой
@@ -259,6 +277,14 @@ export class MatchService {
       };
     });
 
+    // Эмитим событие реакции для SSE
+    emitMatchEvent({
+      matchId: roundData.matchId,
+      type: "REACTION_SUBMITTED",
+      payload: { roundId, participantId, isFalseStart: result.isFalseStart, isBlind: result.isBlind },
+      timestamp: ServerTiming.now(),
+    });
+
     return result;
   }
 
@@ -342,12 +368,14 @@ export class MatchService {
 
       const nextRound = match[0].currentRound + 1;
 
+      let matchStatus = match[0].status;
       if (nextRound > match[0].totalRounds) {
         // Матч завершен
         await tx
           .update(matches)
           .set({ status: "finished" })
           .where(eq(matches.id, matchId));
+        matchStatus = "finished";
       } else {
         // Готовим следующий раунд
         const [nextRoundRecord] = await tx
@@ -373,6 +401,14 @@ export class MatchService {
           .set({ currentRound: nextRound })
           .where(eq(matches.id, matchId));
       }
+
+      // Эмитим событие завершения раунда/матча
+      emitMatchEvent({
+        matchId,
+        type: matchStatus === "finished" ? "MATCH_FINISHED" : "ROUND_FINISHED",
+        payload: { winnerId, roundResults: results },
+        timestamp: ServerTiming.now(),
+      });
 
       return {
         winnerId,
