@@ -288,7 +288,7 @@ npm run dev
 
 2. **Нет WebSocket/SSE для синхронизации**
    - Сейчас сигнал отправляется через tRPC (HTTP)
-   - Для реального времени нужен SSE или WebSocket (см. Фазы 4-5)
+   - Для реального времени нужен SSE или WebSocket (см. Фазы 4-5) ✅
 
 3. **Better-auth требует настройки**
    - В `.env.production`: `BETTER_AUTH_URL="https://yourdomain.com"`
